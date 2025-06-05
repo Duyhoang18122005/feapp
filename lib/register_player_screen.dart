@@ -446,9 +446,9 @@ class _RegisterPlayerScreenState extends State<RegisterPlayerScreen> {
                               }
                             },
                             decoration: InputDecoration(
-                              labelText: 'Giá/giờ (VNĐ)',
-                              hintText: 'Nhập giá bạn muốn nhận',
-                              prefixIcon: const Icon(Icons.attach_money),
+                              labelText: 'Giá/giờ (xu)',
+                              hintText: 'Nhập số xu bạn muốn nhận',
+                              prefixIcon: const Icon(Icons.monetization_on, color: Colors.amber),
                               filled: true,
                               fillColor: Colors.grey[50],
                               border: OutlineInputBorder(
@@ -468,8 +468,8 @@ class _RegisterPlayerScreenState extends State<RegisterPlayerScreen> {
                               if (v!.isEmpty) return 'Vui lòng nhập giá';
                               final price = int.tryParse(v.replaceAll('.', ''));
                               if (price == null) return 'Giá không hợp lệ';
-                              if (price < 10000) return 'Giá tối thiểu là 10.000 VNĐ/giờ';
-                              if (price > 1000000) return 'Giá tối đa là 1.000.000 VNĐ/giờ';
+                              if (price < 1000) return 'Giá tối thiểu là 1.000 xu/giờ';
+                              if (price > 1000000) return 'Giá tối đa là 1.000.000 xu/giờ';
                               return null;
                             },
                           ),

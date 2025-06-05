@@ -91,17 +91,18 @@ class _DonatePlayerScreenState extends State<DonatePlayerScreen> {
               ),
             ),
             const SizedBox(height: 32),
-            const Text('Số dư hiện tại', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+            const Text('Số dư xu', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
             const SizedBox(height: 4),
-            const Text('0', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 18)),
+            const Text('0 xu', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 24),
-            const Text('Số tiền donate:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+            const Text('Số xu donate:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
             const SizedBox(height: 8),
             TextField(
               controller: amountController,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                hintText: 'Nhập số tiền',
+                hintText: 'Nhập số xu',
+                prefixIcon: const Icon(Icons.monetization_on, color: Colors.amber),
                 filled: true,
                 fillColor: Colors.grey[100],
                 border: OutlineInputBorder(

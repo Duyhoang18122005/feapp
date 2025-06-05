@@ -15,8 +15,9 @@ class DepositScreen extends StatefulWidget {
 class _DepositScreenState extends State<DepositScreen> {
   final TextEditingController _amountController = TextEditingController();
   String selectedMethod = 'MOMO';
-  double? walletBalance;
+  int? coinBalance;
   bool isLoadingBalance = true;
+  int calculatedCoin = 0;
   
   final List<Map<String, dynamic>> paymentMethods = [
     {'name': 'MOMO', 'icon': Icons.phone_android, 'color': Colors.pink},
@@ -29,12 +30,20 @@ class _DepositScreenState extends State<DepositScreen> {
   void initState() {
     super.initState();
     _loadWalletBalance();
+    _amountController.addListener(_updateCalculatedCoin);
+  }
+
+  void _updateCalculatedCoin() {
+    final amount = int.tryParse(_amountController.text) ?? 0;
+    setState(() {
+      calculatedCoin = amount ~/ 1000;
+    });
   }
 
   Future<void> _loadWalletBalance() async {
     final balance = await ApiService.fetchWalletBalance();
     setState(() {
-      walletBalance = balance;
+      coinBalance = balance;
       isLoadingBalance = false;
     });
   }
@@ -47,7 +56,7 @@ class _DepositScreenState extends State<DepositScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         title: const Text(
-          'Nạp tiền',
+          'Nạp xu',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
@@ -91,7 +100,7 @@ class _DepositScreenState extends State<DepositScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Số dư hiện tại',
+                      'Số dư xu',
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.black54,
@@ -100,7 +109,7 @@ class _DepositScreenState extends State<DepositScreen> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Icon(Icons.account_balance_wallet, color: Colors.deepOrange),
+                        const Icon(Icons.monetization_on, color: Colors.amber),
                         const SizedBox(width: 8),
                         isLoadingBalance
                           ? const SizedBox(
@@ -108,13 +117,13 @@ class _DepositScreenState extends State<DepositScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.deepOrange),
                             )
                           : Text(
-                              walletBalance != null
-                                ? '${walletBalance!.toStringAsFixed(0)} đ'
+                              coinBalance != null
+                                ? '${coinBalance} xu'
                                 : 'Lỗi',
                               style: TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.deepOrange[700],
+                                color: Colors.amber[800],
                               ),
                             ),
                       ],
@@ -142,7 +151,7 @@ class _DepositScreenState extends State<DepositScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Nhập số tiền',
+                      'Nhập số tiền (VNĐ)',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -153,7 +162,7 @@ class _DepositScreenState extends State<DepositScreen> {
                       controller: _amountController,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
-                        hintText: 'Nhập số tiền cần nạp',
+                        hintText: 'Nhập số tiền (VNĐ)',
                         prefixIcon: const Icon(Icons.attach_money, color: Colors.deepOrange),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -163,14 +172,19 @@ class _DepositScreenState extends State<DepositScreen> {
                         fillColor: Colors.grey[100],
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Bạn nhận được: $calculatedCoin xu',
+                      style: const TextStyle(fontSize: 15, color: Colors.amber, fontWeight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 16),
                     Wrap(
                       spacing: 8,
                       children: [
-                        _buildAmountChip('50.000'),
-                        _buildAmountChip('100.000'),
-                        _buildAmountChip('200.000'),
-                        _buildAmountChip('500.000'),
+                        _buildAmountChip('10000'),
+                        _buildAmountChip('20000'),
+                        _buildAmountChip('50000'),
+                        _buildAmountChip('100000'),
                       ],
                     ),
                   ],
@@ -215,14 +229,32 @@ class _DepositScreenState extends State<DepositScreen> {
                 child: ElevatedButton(
                   onPressed: () async {
                     try {
-                      final amount = double.tryParse(_amountController.text) ?? 0;
-                      if (amount < 10000) {
+                      final amount = int.tryParse(_amountController.text) ?? 0;
+                      final coin = amount ~/ 1000;
+                      print('DEBUG: Số tiền nhập: $amount, số coin gửi lên API: $coin');
+                      if (coin < 1) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Số tiền nạp tối thiểu là 10.000đ')),
+                          const SnackBar(content: Text('Số tiền nạp tối thiểu là 1.000 VNĐ (tương đương 1 xu)')),
                         );
                         return;
                       }
-                      final result = await ApiService.deposit(amount, selectedMethod);
+                      if (selectedMethod == 'MOMO' || selectedMethod == 'VNPAY' || selectedMethod == 'ZALOPAY') {
+                        // Nạp coin trực tiếp
+                        final error = await ApiService.topUp(coin);
+                        if (error == null) {
+                          _loadWalletBalance();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Nạp xu thành công')),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(error)),
+                          );
+                        }
+                        return;
+                      }
+                      // Nếu là BANK_TRANSFER hoặc phương thức khác cần webview, vẫn gọi deposit
+                      final result = await ApiService.deposit(amount.toDouble(), selectedMethod);
                       print('Deposit API response:');
                       print(result);
                       if (result == null) {
@@ -245,7 +277,7 @@ class _DepositScreenState extends State<DepositScreen> {
                         _showBankTransferDialog(result);
                       }
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(result['message'] ?? 'Nạp tiền thành công')),
+                        SnackBar(content: Text(result['message'] ?? 'Nạp xu thành công')),
                       );
                     } catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -261,7 +293,7 @@ class _DepositScreenState extends State<DepositScreen> {
                     ),
                   ),
                   child: const Text(
-                    'Nạp tiền ngay',
+                    'Nạp xu ngay',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -285,7 +317,7 @@ class _DepositScreenState extends State<DepositScreen> {
         });
       },
       backgroundColor: Colors.orange[50],
-      labelStyle: const TextStyle(color: Colors.deepOrange),
+      labelStyle: const TextStyle(color: Colors.amber),
     );
   }
 
@@ -339,7 +371,7 @@ class _DepositScreenState extends State<DepositScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Quét mã QR để thanh toán',
+                'Quét mã QR để nạp xu',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -362,7 +394,7 @@ class _DepositScreenState extends State<DepositScreen> {
               ),
               const SizedBox(height: 20),
               Text(
-                'Số tiền: ${_amountController.text}đ',
+                'Số tiền: ${_amountController.text} VNĐ',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -370,17 +402,13 @@ class _DepositScreenState extends State<DepositScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              if (result['transactionId'] != null) ...[
-                Text(
-                  'Mã giao dịch: ${result['transactionId']}',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 8),
-              ],
               Text(
-                'Nội dung: ${result['transferContent'] ?? ''}',
-                style: const TextStyle(fontSize: 14),
-                textAlign: TextAlign.center,
+                'Bạn nhận được: $calculatedCoin xu',
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: Colors.amber,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 20),
               Row(
@@ -393,6 +421,13 @@ class _DepositScreenState extends State<DepositScreen> {
                   ElevatedButton(
                     onPressed: () async {
                       try {
+                        print('DEBUG: Số coin gửi lên API (QR): $calculatedCoin');
+                        if (calculatedCoin < 1) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Số tiền nạp tối thiểu là 1.000 VNĐ (tương đương 1 xu)')),
+                          );
+                          return;
+                        }
                         // Hiển thị loading
                         showDialog(
                           context: context,
@@ -403,8 +438,7 @@ class _DepositScreenState extends State<DepositScreen> {
                         );
 
                         // Gọi API topup
-                        final amount = double.tryParse(_amountController.text) ?? 0;
-                        final error = await ApiService.topUp(amount);
+                        final error = await ApiService.topUp(calculatedCoin);
                         
                         // Đóng loading
                         Navigator.pop(context);
@@ -416,7 +450,7 @@ class _DepositScreenState extends State<DepositScreen> {
                           _loadWalletBalance();
                           // Hiển thị thông báo thành công
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Nạp tiền thành công')),
+                            const SnackBar(content: Text('Nạp xu thành công')),
                           );
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -462,10 +496,19 @@ class _DepositScreenState extends State<DepositScreen> {
             Text('Nội dung: ${result['transferContent'] ?? ''}'),
             const SizedBox(height: 16),
             Text(
-              'Số tiền: ${_amountController.text}đ',
+              'Số tiền: ${_amountController.text} VNĐ',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Colors.deepOrange,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Bạn nhận được: $calculatedCoin xu',
+              style: const TextStyle(
+                fontSize: 15,
+                color: Colors.amber,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -478,6 +521,13 @@ class _DepositScreenState extends State<DepositScreen> {
           ElevatedButton(
             onPressed: () async {
               try {
+                print('DEBUG: Số coin gửi lên API (Bank): $calculatedCoin');
+                if (calculatedCoin < 1) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Số tiền nạp tối thiểu là 1.000 VNĐ (tương đương 1 xu)')),
+                  );
+                  return;
+                }
                 // Hiển thị loading
                 showDialog(
                   context: context,
@@ -488,8 +538,7 @@ class _DepositScreenState extends State<DepositScreen> {
                 );
 
                 // Gọi API topup
-                final amount = double.tryParse(_amountController.text) ?? 0;
-                final error = await ApiService.topUp(amount);
+                final error = await ApiService.topUp(calculatedCoin);
                 
                 // Đóng loading
                 Navigator.pop(context);
@@ -501,7 +550,7 @@ class _DepositScreenState extends State<DepositScreen> {
                   _loadWalletBalance();
                   // Hiển thị thông báo thành công
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Nạp tiền thành công')),
+                    const SnackBar(content: Text('Nạp xu thành công')),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(

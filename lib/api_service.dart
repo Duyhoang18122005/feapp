@@ -1,13 +1,27 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'config/api_config.dart';
+import 'package:logger/logger.dart';
 
 class ApiService {
   static const storage = FlutterSecureStorage();
   static Map<String, dynamic>? _currentUser;
   static const timeout = Duration(seconds: 10);
+  static final logger = Logger();
 
+  // Kiểm tra kết nối internet
+  static Future<bool> checkConnection() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } on SocketException catch (_) {
+      return false;
+    }
+  }
+
+  // Lấy headers với token
   static Future<Map<String, String>> get _headersWithToken async {
     final token = await storage.read(key: 'jwt');
     return {
@@ -16,8 +30,37 @@ class ApiService {
     };
   }
 
+  // Refresh token
+  static Future<String?> refreshToken() async {
+    try {
+      final refreshToken = await storage.read(key: 'refresh_token');
+      if (refreshToken == null) return null;
+
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.refreshToken}'),
+        headers: ApiConfig.defaultHeaders,
+        body: jsonEncode({'refreshToken': refreshToken}),
+      ).timeout(timeout);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        await storage.write(key: 'jwt', value: data['token']);
+        await storage.write(key: 'refresh_token', value: data['refreshToken']);
+        return data['token'];
+      }
+      return null;
+    } catch (e) {
+      logger.e('Error refreshing token: $e');
+      return null;
+    }
+  }
+
   // Login
   static Future<String?> login(String username, String password) async {
+    if (!await checkConnection()) {
+      return 'Không có kết nối internet';
+    }
+
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.login}'),
@@ -31,122 +74,149 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         await storage.write(key: 'jwt', value: data['token']);
-        await storage.write(key: 'user', value: jsonEncode(data['user']));
-        _currentUser = data['user'];
-        final userId = data['user']?['id']?.toString() ?? '';
-        print('[Flutter] Đã lưu userId sau đăng nhập: $userId');
+        await storage.write(key: 'refresh_token', value: data['refreshToken']);
+        await storage.write(key: 'user', value: jsonEncode(data));
+        _currentUser = data;
         return null;
       } else {
         final error = jsonDecode(response.body);
         return error['message'] ?? 'Đăng nhập thất bại';
       }
     } catch (e) {
+      logger.e('Login error: $e');
+      return 'Lỗi kết nối: $e';
+    }
+  }
+
+  // Register
+  static Future<String?> register(Map<String, dynamic> userData) async {
+    if (!await checkConnection()) {
+      return 'Không có kết nối internet';
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.register}'),
+        headers: ApiConfig.defaultHeaders,
+        body: jsonEncode(userData),
+      ).timeout(timeout);
+
+      if (response.statusCode == 200) {
+        return null;
+      } else {
+        final error = jsonDecode(response.body);
+        return error['message'] ?? 'Đăng ký thất bại';
+      }
+    } catch (e) {
+      logger.e('Register error: $e');
       return 'Lỗi kết nối: $e';
     }
   }
 
   // Logout
   static Future<void> logout() async {
-    await storage.delete(key: 'jwt');
-    await storage.delete(key: 'user');
-    await storage.delete(key: 'device_token_sent');
-    _currentUser = null;
-  }
-
-  // Update Device Token
-  static Future<bool> updateDeviceToken(String deviceToken) async {
     try {
       final headers = await _headersWithToken;
-      final url = '${ApiConfig.baseUrl}${ApiConfig.deviceToken}';
-      print('==============================');
-      print('[Flutter] BẮT ĐẦU GỬI DEVICE TOKEN');
-      print('URL: $url');
-      print('Headers:');
-      headers.forEach((k, v) => print('  $k: $v'));
-      print('Body: {"deviceToken": "$deviceToken"}');
-      print('------------------------------');
+      await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.logout}'),
+        headers: headers,
+      );
+    } catch (e) {
+      logger.e('Logout error: $e');
+    } finally {
+      await storage.delete(key: 'jwt');
+      await storage.delete(key: 'refresh_token');
+      await storage.delete(key: 'user');
+      await storage.delete(key: 'device_token_sent');
+      _currentUser = null;
+    }
+  }
 
+  // Get current user info
+  static Future<Map<String, dynamic>?> getCurrentUser() async {
+    if (!await checkConnection()) {
+      return null;
+    }
+
+    try {
+      final headers = await _headersWithToken;
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.me}'),
+        headers: headers,
+      ).timeout(timeout);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _currentUser = data;
+        return data;
+      } else if (response.statusCode == 401) {
+        // Token expired, try to refresh
+        final newToken = await refreshToken();
+        if (newToken != null) {
+          return getCurrentUser(); // Retry with new token
+        }
+      }
+      return null;
+    } catch (e) {
+      logger.e('Get current user error: $e');
+      return null;
+    }
+  }
+
+  // Update device token
+  static Future<bool> updateDeviceToken(String deviceToken) async {
+    if (!await checkConnection()) {
+      return false;
+    }
+
+    try {
+      final headers = await _headersWithToken;
       final response = await http.post(
-        Uri.parse(url),
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.deviceToken}'),
         headers: headers,
         body: jsonEncode({'deviceToken': deviceToken}),
       ).timeout(timeout);
 
-      print('[Flutter] ĐÃ NHẬN RESPONSE TỪ BACKEND');
-      print('Status code: ${response.statusCode}');
-      print('Response headers:');
-      response.headers.forEach((k, v) => print('  $k: $v'));
-      print('Response body: ${response.body}');
-      print('==============================');
-
-      if (response.statusCode == 200) {
-        await storage.write(key: 'device_token_sent', value: 'true');
-        print('[Flutter] Đã lưu trạng thái gửi device token thành công.');
-        return true;
-      } else if (response.statusCode == 401) {
-        print('[Flutter] Token xác thực không hợp lệ hoặc đã hết hạn. Đăng xuất...');
-        await logout();
-        return false;
-      } else {
-        print('[Flutter] Gửi device token thất bại với status: ${response.statusCode}');
-        return false;
-      }
-    } catch (e, stack) {
-      print('[Flutter] LỖI khi gửi device token: $e');
-      print('[Flutter] Stacktrace: $stack');
-      return false;
-    }
-  }
-
-  // Get Current User
-  static Future<Map<String, dynamic>?> getCurrentUser() async {
-    if (_currentUser != null) return _currentUser;
-
-    try {
-      final userJson = await storage.read(key: 'user');
-      if (userJson != null) {
-        _currentUser = jsonDecode(userJson) as Map<String, dynamic>;
-        print('[Flutter] Lấy user từ storage: ${_currentUser?['id']}');
-        return _currentUser;
-      }
-      return null;
+      return response.statusCode == 200;
     } catch (e) {
-      print('Lỗi khi đọc thông tin người dùng: $e');
-      return null;
+      logger.e('Update device token error: $e');
+      return false;
     }
   }
 
   // Get User Info
   static Future<Map<String, dynamic>?> getUserInfo() async {
-    try {
-      print('==============================');
-      print('[Flutter] BẮT ĐẦU LẤY THÔNG TIN USER');
-      print('URL: ${ApiConfig.baseUrl}${ApiConfig.userInfo}');
-      final headers = await _headersWithToken;
-      print('Headers:');
-      headers.forEach((k, v) => print('  $k: $v'));
+    if (!await checkConnection()) {
+      return null;
+    }
 
+    try {
+      logger.d('Bắt đầu lấy thông tin user');
+      final headers = await _headersWithToken;
+      
       final response = await http.get(
         Uri.parse('${ApiConfig.baseUrl}${ApiConfig.userInfo}'),
         headers: headers,
       ).timeout(timeout);
 
-      print('[Flutter] ĐÃ NHẬN RESPONSE TỪ BACKEND');
-      print('Status code: ${response.statusCode}');
-      print('Response headers:');
-      response.headers.forEach((k, v) => print('  $k: $v'));
-      print('Response body: ${response.body}');
-      print('==============================');
+      logger.d('Response status: ${response.statusCode}');
+      logger.d('Response body: ${response.body}');
 
       if (response.statusCode == 200 && response.body.isNotEmpty) {
         final data = jsonDecode(response.body);
         if (data != null && data is Map<String, dynamic>) {
           return data;
         }
+      } else if (response.statusCode == 401) {
+        // Token expired, try to refresh
+        final newToken = await refreshToken();
+        if (newToken != null) {
+          return getUserInfo(); // Retry with new token
+        }
       }
       return null;
     } catch (e) {
-      print('Lỗi khi đọc thông tin người dùng: $e');
+      logger.e('Lỗi khi đọc thông tin người dùng: $e');
       return null;
     }
   }
@@ -249,34 +319,6 @@ class ApiService {
     }
   }
 
-  static Future<String?> register(String username, String password, String email, String fullName) async {
-    try {
-      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.register}');
-      final response = await http.post(
-        url,
-        headers: ApiConfig.defaultHeaders,
-        body: jsonEncode({
-          'username': username,
-          'password': password,
-          'email': email,
-          'fullName': fullName,
-        }),
-      ).timeout(timeout);
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return null;
-      } else {
-        final error = jsonDecode(response.body);
-        return error['message'] ?? 'Đăng ký thất bại';
-      }
-    } catch (e) {
-      if (e is http.ClientException) {
-        return 'Không thể kết nối đến máy chủ';
-      }
-      return 'Đã xảy ra lỗi: ${e.toString()}';
-    }
-  }
-
   static Future<List<dynamic>> fetchGames() async {
     try {
       final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.games}');
@@ -353,23 +395,35 @@ class ApiService {
     }
   }
 
-  static Future<double?> fetchWalletBalance() async {
+  // Nạp tiền (topup)
+  static Future<String?> topUp(int coin) async {
     try {
-      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.payments}/wallet-balance');
-      final response = await http.get(
+      final token = await storage.read(key: 'jwt');
+      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.payments}/topup');
+      final response = await http.post(
         url,
-        headers: await _headersWithToken,
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'coin': coin,
+        }),
       ).timeout(timeout);
 
       if (response.statusCode == 200) {
-        return double.tryParse(response.body);
+        return null; // Thành công
+      } else {
+        final error = jsonDecode(response.body);
+        return error['message'] ?? 'Nạp coin thất bại';
       }
-      return null;
     } catch (e) {
-      return null;
+      print('Lỗi khi nạp coin: ${e.toString()}');
+      return 'Đã xảy ra lỗi: ${e.toString()}';
     }
   }
 
+  // Nạp tiền qua QR/bank (deposit)
   static Future<Map<String, dynamic>?> deposit(double amount, String method) async {
     final token = await storage.read(key: 'jwt');
     final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.payments}/deposit');
@@ -387,7 +441,30 @@ class ApiService {
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
-      throw Exception(jsonDecode(response.body)['message'] ?? 'Nạp tiền thất bại');
+      return jsonDecode(response.body);
+    }
+  }
+
+  // Lấy số dư ví
+  static Future<int?> fetchWalletBalance() async {
+    try {
+      final token = await storage.read(key: 'jwt');
+      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.payments}/wallet-balance');
+      final response = await http.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      ).timeout(timeout);
+
+      if (response.statusCode == 200) {
+        // BE trả về số xu (long)
+        return int.tryParse(response.body);
+      }
+      return null;
+    } catch (e) {
+      return null;
     }
   }
 
@@ -414,33 +491,6 @@ class ApiService {
     } catch (e) {
       print('Lỗi khi xử lý thanh toán: ${e.toString()}');
       return null;
-    }
-  }
-
-  static Future<String?> topUp(double amount) async {
-    try {
-      final token = await storage.read(key: 'jwt');
-      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.payments}/topup');
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'amount': amount,
-        }),
-      ).timeout(timeout);
-
-      if (response.statusCode == 200) {
-        return null; // Thành công
-      } else {
-        final error = jsonDecode(response.body);
-        return error['message'] ?? 'Nạp tiền thất bại';
-      }
-    } catch (e) {
-      print('Lỗi khi nạp tiền: ${e.toString()}');
-      return 'Đã xảy ra lỗi: ${e.toString()}';
     }
   }
 
@@ -510,21 +560,23 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>?> getUserById(int userId) async {
+    if (!await checkConnection()) {
+      return null;
+    }
+
     try {
+      final headers = await _headersWithToken;
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/users/$userId'),
-        headers: await _headersWithToken,
+        Uri.parse('${ApiConfig.baseUrl}/api/users/$userId'),
+        headers: headers,
       ).timeout(timeout);
 
-      if (response.statusCode == 200 && response.body.isNotEmpty) {
-        final data = jsonDecode(response.body);
-        if (data != null && data is Map<String, dynamic>) {
-          return data;
-        }
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
       }
       return null;
     } catch (e) {
-      print('Lỗi lấy thông tin user: $e');
+      logger.e('Get user by ID error: $e');
       return null;
     }
   }

@@ -14,7 +14,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   String userId = '';
   bool isLoading = true;
-  double? walletBalance;
+  double? coinBalance;
   bool isLoadingBalance = true;
 
   @override
@@ -38,7 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final balance = await ApiService.fetchWalletBalance();
     if (mounted) {
       setState(() {
-        walletBalance = balance;
+        coinBalance = balance?.toDouble();
         isLoadingBalance = false;
       });
     }
@@ -133,11 +133,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const Text("Thông tin", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black54)),
                     const SizedBox(height: 16),
                     _InfoRow(
-                      icon: Icons.account_balance_wallet,
-                      label: "Số dư trong ví",
+                      icon: Icons.monetization_on,
+                      label: "Số dư xu",
                       value: isLoadingBalance
                         ? null
-                        : (walletBalance != null ? '${walletBalance!.toStringAsFixed(0)}đ' : 'Lỗi'),
+                        : (coinBalance != null ? '${coinBalance!.toStringAsFixed(0)} xu' : 'Lỗi'),
                     ),
                     const SizedBox(height: 8),
                     _InfoRow(icon: Icons.balance, label: "Biến động số dư"),

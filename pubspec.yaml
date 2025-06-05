@@ -1,5 +1,5 @@
-name: playerduo_clone
-description: "A new Flutter project."
+name: playerduo
+description: A new Flutter project.
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.7.2
+  sdk: '>=3.0.0 <4.0.0'
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -30,19 +30,38 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  cupertino_icons: ^1.0.2
+  
+  # HTTP và API
   http: ^1.1.0
-  flutter_secure_storage: ^9.0.0
-  url_launcher: ^6.2.5
-  webview_flutter: ^4.7.0
+  dio: ^5.3.2
+  
+  # State Management
+  provider: ^6.0.5
+  
+  # Storage
+  flutter_secure_storage: ^9.2.4
+  shared_preferences: ^2.2.0
+  
+  # Firebase
+  firebase_core: ^3.13.1
+  firebase_messaging: ^15.2.6
+  
+  # UI Components
+  flutter_local_notifications: ^19.2.1
+  url_launcher: ^6.1.11
   qr_flutter: ^4.1.0
-  firebase_core: ^2.0.0
-  firebase_messaging: ^14.0.0
-  flutter_local_notifications: ^16.3.0
-
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
-
+  cached_network_image: ^3.2.3
+  shimmer: ^3.0.0
+  
+  # Utils
+  intl: ^0.20.2
+  logger: ^2.0.1
+  connectivity_plus: ^6.1.4
+  image_picker: ^1.0.2
+  path_provider: ^2.1.0
+  permission_handler: ^12.0.0+1
+  webview_flutter: ^4.13.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -52,7 +71,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -96,10 +115,6 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-  # assets:
-  #   - assets/logo.png
-  #   - assets/lol.png
-  #   - assets/tft.png
-  #   - assets/pubg.png
-  #   - assets/vip1.jpg
-  #   - assets/vip2.jpg
+  assets:
+    - assets/images/
+    - assets/icons/

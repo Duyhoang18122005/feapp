@@ -68,7 +68,7 @@ class _DepositHistoryScreenState extends State<DepositHistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Lịch sử nạp tiền'),
+        title: const Text('Lịch sử nạp xu'),
         backgroundColor: const Color(0xFFF7F7F9),
       ),
       body: Column(
@@ -210,14 +210,12 @@ class _DepositHistoryScreenState extends State<DepositHistoryScreen> {
             children: [
               const Icon(Icons.monetization_on, color: Colors.amber, size: 20),
               const SizedBox(width: 4),
-              Text('${item['coinAmount']} xu', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Text('${item['coinAmount']} xu', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.amber)),
               const SizedBox(width: 12),
               Text(item['method'], style: const TextStyle(color: Colors.black54)),
               const Spacer(),
-              Text(
-                '${_formatMoney(item['amount'])} đ',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
+              if(item['amount'] != null)
+                Text('(${_formatMoney(item['amount'])} đ)', style: const TextStyle(color: Colors.grey, fontSize: 13)),
             ],
           ),
           const SizedBox(height: 4),

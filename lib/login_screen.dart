@@ -1,17 +1,10 @@
 import 'package:flutter/material.dart';
 import 'forgot_password_screen.dart';
 import 'register_screen.dart';
-import 'home_screen.dart';
 import 'main.dart';
 import 'api_service.dart';
 import 'utils/notification_helper.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:math';
-import 'dart:io';
-import 'config/api_config.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -76,87 +69,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Future<bool> kiemTraKetNoi() async {
-    try {
-      final result = await InternetAddress.lookup('google.com');
-      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-    } on SocketException catch (_) {
-      return false;
-    }
-  }
-
-  Future<void> guiDeviceToken(String deviceToken) async {
-    try {
-      // Kiểm tra kết nối mạng
-      if (!await kiemTraKetNoi()) {
-        print('Không có kết nối mạng');
-        return;
-      }
-
-      String? authToken = await layTokenXacThuc(); // Lấy JWT đã lưu
-      if (authToken == null) {
-        print('Không có token xác thực');
-        return;
-      }
-
-      print('Đang gửi request với:');
-      print('URL: ${ApiConfig.baseUrl}/api/notifications/device-token');
-      print('Headers: {');
-      print('  Content-Type: application/json');
-      print('  Authorization: Bearer ${authToken.substring(0, 20)}...');
-      print('}');
-      print('Body: {"deviceToken": "$deviceToken"}');
-
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/notifications/device-token'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
-        },
-        body: jsonEncode({'deviceToken': deviceToken}),
-      ).timeout(const Duration(seconds: 10));
-
-      print('Response status: ${response.statusCode}');
-      print('Response headers: ${response.headers}');
-      print('Response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        print('Gửi token thiết bị thành công');
-        // Lưu trạng thái đã gửi token
-        final storage = FlutterSecureStorage();
-        await storage.write(key: 'device_token_sent', value: 'true');
-      } else if (response.statusCode == 401) {
-        print('Token xác thực không hợp lệ hoặc đã hết hạn');
-        // Xóa token cũ và yêu cầu đăng nhập lại
-        final storage = FlutterSecureStorage();
-        await storage.delete(key: 'jwt');
-        await storage.delete(key: 'user');
-        if (mounted) {
-          NotificationHelper.showError(context, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-          );
-        }
-      } else {
-        print('Gửi token thiết bị thất bại: statusCode=${response.statusCode}, body=${response.body}');
-        if (mounted) {
-          NotificationHelper.showError(context, 'Không thể cập nhật token thiết bị. Vui lòng thử lại sau.');
-        }
-      }
-    } catch (e) {
-      print('Lỗi khi gửi token thiết bị: $e');
-      if (mounted) {
-        NotificationHelper.showError(context, 'Có lỗi xảy ra khi cập nhật token thiết bị.');
-      }
-    }
-  }
-
-  Future<String?> layTokenXacThuc() async {
-    final storage = FlutterSecureStorage();
-    return await storage.read(key: 'jwt');
-  }
-
   Future<void> handleLogin() async {
     validateInputs();
     if (usernameError != null || passwordError != null) return;
@@ -165,59 +77,48 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final username = usernameController.text.trim();
       final password = passwordController.text.trim();
-      final error = await ApiService.login(username, password);
-      if (error == null) {
+      
+      // Kiểm tra kết nối internet
+      if (!await ApiService.checkConnection()) {
         if (!mounted) return;
-
-        // Sau khi login thành công, dùng JWT gọi API lấy thông tin user
-        final user = await ApiService.getUserInfo();
-        if (user != null) {
-          final storage = FlutterSecureStorage();
-          await storage.write(key: 'user', value: jsonEncode(user));
-          final userId = user['id']?.toString() ?? '';
-          String? deviceToken = await FirebaseMessaging.instance.getToken();
-          if (userId.isNotEmpty && deviceToken != null) {
-            final success = await ApiService.updateDeviceToken(deviceToken);
-            if (success) {
-              await storage.write(key: 'device_token_sent_$userId', value: deviceToken);
-            } else if (mounted) {
-              NotificationHelper.showError(context, 'Không thể cập nhật token thiết bị. Vui lòng thử lại sau.');
-            }
-          }
-        } else {
-          NotificationHelper.showError(context, 'Không lấy được thông tin người dùng!');
-        }
-
-        NotificationHelper.showSuccess(context, 'Đăng nhập thành công!');
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MainNavigation()),
-        );
-      } else {
-        if (!mounted) return;
-        NotificationHelper.showError(context, error);
+        showErrorSnackBar('Không có kết nối internet');
+        return;
       }
+
+      final error = await ApiService.login(username, password);
+      if (!mounted) return;
+
+      if (error == null) {
+        // Sau khi login thành công, lấy thông tin user
+        final user = await ApiService.getCurrentUser();
+        if (user != null) {
+          // Cập nhật device token nếu cần
+          String? deviceToken = await FirebaseMessaging.instance.getToken();
+          if (deviceToken != null) {
+            await ApiService.updateDeviceToken(deviceToken);
+          }
+          
+          showSuccessSnackBar('Đăng nhập thành công!');
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (!mounted) return;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const MainNavigation()),
+          );
+        } else {
+          showErrorSnackBar('Không lấy được thông tin người dùng!');
+        }
+      } else {
+        showErrorSnackBar(error);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showErrorSnackBar('Đã xảy ra lỗi: $e');
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
       }
     }
-  }
-
-  // Thêm hàm logout để xóa sạch thông tin local
-  Future<void> handleLogout() async {
-    final storage = FlutterSecureStorage();
-    await storage.deleteAll(); // Xóa sạch toàn bộ thông tin local
-    await ApiService.logout();
-    if (!mounted) return;
-    NotificationHelper.showSuccess(context, 'Đăng xuất thành công!');
-    await Future.delayed(const Duration(milliseconds: 500));
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-      (route) => false,
-    );
   }
 
   @override

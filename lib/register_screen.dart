@@ -48,34 +48,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> handleRegister() async {
     validateInputs();
-    if (usernameError != null ||
-        emailError != null ||
-        passwordError != null ||
-        confirmPasswordError != null ||
-        fullNameError != null) {
-      return;
-    }
+    if (usernameError != null || emailError != null || passwordError != null || 
+        confirmPasswordError != null || fullNameError != null) return;
 
     setState(() => isLoading = true);
     try {
-      final username = usernameController.text.trim();
-      final email = emailController.text.trim();
-      final password = passwordController.text.trim();
-      final fullName = fullNameController.text.trim();
+      // Kiểm tra kết nối internet
+      if (!await ApiService.checkConnection()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không có kết nối internet')),
+        );
+        return;
+      }
 
-      final error = await ApiService.register(username, password, email, fullName);
+      final userData = {
+        'username': usernameController.text.trim(),
+        'password': passwordController.text.trim(),
+        'email': emailController.text.trim(),
+        'fullName': fullNameController.text.trim(),
+        'dateOfBirth': null,
+        'phoneNumber': null,
+        'address': null,
+        'gender': null,
+      };
+
+      final error = await ApiService.register(userData);
       if (!mounted) return;
 
       if (error == null) {
-        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Đăng ký thành công!')),
         );
+        Navigator.pop(context);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(error)),
         );
       }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã xảy ra lỗi: $e')),
+      );
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
